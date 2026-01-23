@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+vosk
+soundfile
+pydub
+ffmpeg-python
+transformers
+torch
+sentencepiece
+reportlab
