@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware  # ← CORS ADDED
 from fastapi import HTTPException
 import shutil
 import os
@@ -12,11 +13,32 @@ from services.pdf_generator import create_pdf
 
 app = FastAPI(title="Noteify AI - Perfect Lecture Notes")
 
+# ✅ CORS - Allows frontend:3000 to connect
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # Frontend URLs
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 AUDIO_FORMATS = {'.mp3', '.wav', '.m4a', '.aac'}
 VIDEO_FORMATS = {'.mp4', '.avi', '.mov', '.mkv', '.webm'}
+
+@app.get("/")
+async def root():
+    return {
+        "message": "✅ Noteify AI - Perfect Lecture Notes Generator",
+        "features": [
+            "📄 Full Transcription (100% content preserved)",
+            "📝 Smart Summary (key points only)", 
+            "📄 Professional PDF (perfect alignment)"
+        ],
+        "supported_formats": sorted(list(AUDIO_FORMATS | VIDEO_FORMATS))
+    }
 
 @app.post("/process")
 async def process_lecture(file: UploadFile = File(...)):
@@ -64,17 +86,19 @@ async def process_lecture(file: UploadFile = File(...)):
         pdf_path = f"{UPLOAD_DIR}/{pdf_filename}"
         create_pdf(notes_data, pdf_path)
         
-        # ✅ CLEAN JSON: Full content + Smart summary
-        return {
+        # ✅ PERFECT JSON RESPONSE for Frontend
+        response = {
             "success": True,
             "filename": filename,
             "type": "video" if file_ext in VIDEO_FORMATS else "audio",
             "content": {
-                "full_transcription": notes_data["full_transcription"],  # ✅ ALL content
-                "summary": notes_data["summary"]                         # ✅ Smart summary only
+                "full_transcription": notes_data["full_transcription"],
+                "summary": notes_data["summary"]
             },
             "pdf_url": f"/download/{pdf_filename}"
         }
+        print(f"✅ Response sent: {response['content']['full_transcription'][:100]}...")
+        return response
     
     except Exception as e:
         print(f"❌ ERROR: {str(e)}")
@@ -82,7 +106,7 @@ async def process_lecture(file: UploadFile = File(...)):
         raise HTTPException(500, f"Processing failed: {str(e)}")
     
     finally:
-        # Clean up temp files
+        # Clean up temp files (KEEP PDF)
         cleanup_files = [input_path, audio_path, wav_path]
         for path in cleanup_files:
             if path and os.path.exists(path):
@@ -102,19 +126,8 @@ async def download_pdf(filename: str):
             filename="perfect-lecture-notes.pdf",
             media_type="application/pdf"
         )
+    print(f"❌ PDF not found: {file_path}")
     raise HTTPException(404, "PDF not found")
-
-@app.get("/")
-async def root():
-    return {
-        "message": "✅ Noteify AI - Perfect Lecture Notes Generator",
-        "features": [
-            "📄 Full Transcription (100% content preserved)",
-            "📝 Smart Summary (key points only)", 
-            "📄 Professional PDF (perfect alignment)"
-        ],
-        "supported_formats": sorted(list(AUDIO_FORMATS | VIDEO_FORMATS))
-    }
 
 if __name__ == "__main__":
     import uvicorn
