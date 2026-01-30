@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 import os
 import shutil
 import traceback
@@ -19,6 +20,7 @@ app = FastAPI(
     version="1.0"
 )
 
+# CORS (safe to keep; no issues on Render)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,22 +29,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = "uploads"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 AUDIO_FORMATS = {".mp3", ".wav", ".m4a", ".aac"}
 VIDEO_FORMATS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
 # ─────────────────────────────────────────────
-# Health Check
+# Serve Frontend (React build)
 # ─────────────────────────────────────────────
-@app.get("/")
-def root():
-    return {
-        "status": "running",
-        "service": "Noteify AI Backend",
-        "message": "Upload audio/video to generate professional lecture notes"
-    }
+if os.path.exists(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    @app.get("/")
+    def serve_frontend():
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+    # React Router support (important!)
+    @app.get("/{path:path}")
+    def serve_react_routes(path: str):
+        file_path = os.path.join(STATIC_DIR, path)
+        if os.path.exists(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+else:
+    # Fallback if frontend is not built
+    @app.get("/")
+    def root():
+        return {
+            "status": "running",
+            "service": "Noteify AI Backend",
+            "message": "Frontend not built yet"
+        }
 
 # ─────────────────────────────────────────────
 # Main Processing Endpoint - FULL TRANSCRIPTION
@@ -56,7 +78,6 @@ async def process_lecture(file: UploadFile = File(...)):
     file_ext = os.path.splitext(filename)[1]
     input_path = os.path.join(UPLOAD_DIR, filename)
 
-    # Save uploaded file
     with open(input_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
@@ -66,7 +87,6 @@ async def process_lecture(file: UploadFile = File(...)):
     try:
         print(f"📁 Received file: {filename}")
 
-        # Step 1: Handle input type
         if file_ext in VIDEO_FORMATS:
             print("🎥 Extracting audio from video...")
             audio_path = extract_audio_from_video(input_path)
@@ -79,11 +99,9 @@ async def process_lecture(file: UploadFile = File(...)):
                 detail=f"Unsupported file format: {file_ext}"
             )
 
-        # Step 2: Convert to WAV
         print("🔄 Converting to WAV...")
         wav_path = convert_to_wav(audio_path)
 
-        # Step 3: Transcription
         print("🎙️ Transcribing audio...")
         transcription_text = transcribe_audio(wav_path)
 
@@ -96,36 +114,28 @@ async def process_lecture(file: UploadFile = File(...)):
         print("📚 Generating structured summary...")
         notes_data = summarize_text(transcription_text)
 
-        # Step 4: Generate PDF
         pdf_filename = os.path.splitext(filename)[0] + ".pdf"
         pdf_path = os.path.join(UPLOAD_DIR, pdf_filename)
 
         print("📄 Creating professional PDF...")
         create_pdf(notes_data, pdf_path, filename)
 
-        # ✅ FULL TRANSCRIPTION + CLEAN SUMMARY
         full_transcription = " ".join(notes_data["full_transcription"])
         summary = notes_data["summary"]["paragraph"].strip()
-        
-        # Clean up summary (remove extra dots, ensure proper ending)
+
         summary = summary.rstrip('.').rstrip('…').rstrip('...').strip()
         if not summary.endswith(('.', '!', '?')):
             summary += '.'
 
-        response = {
+        return {
             "success": True,
             "filename": filename,
             "output": {
-                # FULL CONTENT - No truncation!
                 "full_transcription": full_transcription,
                 "summary_paragraph": summary
             },
             "pdf_url": f"/api/download/{pdf_filename}"
         }
-
-        print("✅ Processing completed successfully")
-        print(f"📝 Full transcription length: {len(full_transcription)} chars")
-        return response
 
     except HTTPException:
         raise
@@ -137,7 +147,6 @@ async def process_lecture(file: UploadFile = File(...)):
             detail=f"Processing failed: {str(e)}"
         )
     finally:
-        # Cleanup temp files (keep PDF)
         for path in [input_path, audio_path, wav_path]:
             try:
                 if path and os.path.exists(path):
