@@ -1,61 +1,68 @@
 import re
-from typing import List, Dict
 from collections import Counter
+from typing import Dict, List
 
-def clean_transcription(text: str) -> str:
-    """Clean transcription text."""
-    text = re.sub(r"\s+", " " , text.strip())
-    text = re.sub(r"\b(dot|dash|slash)\b", 
-                  lambda m: {"dot": ".", "dash": "-", "slash": "/"}.get(m.group(0).lower(), m.group(0)),
-                  text, flags=re.IGNORECASE)
-    return text.strip()
+STOPWORDS = set([
+    "the", "is", "was", "were", "are", "and", "or", "to", "of",
+    "in", "that", "this", "with", "as", "for", "on", "at", "by",
+    "an", "a", "from", "be", "been", "have", "has", "had", "it",
+    "can", "will", "would", "could", "should", "do", "does", "did"
+])
 
-def extract_main_key_point(text: str) -> str:
-    """🎯 Extract SINGLE MAIN key point in 3 concise lines."""
-    
-    # Key AI/Agent phrases that indicate MAIN points
-    key_indicators = [
-        'most valuable skills', 'most in-demand skills', 'best practices', 
-        'single biggest predictor', 'systematic understanding', 'key takeaway'
-    ]
-    
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s) > 15]
-    
-    # Find sentence with strongest key indicator
-    best_score = 0
-    main_point = "Key lecture content"
-    
-    for sent in sentences:
-        score = 0
-        sent_lower = sent.lower()
-        
-        # Score based on key indicators
-        for indicator in key_indicators:
-            if indicator in sent_lower:
-                score += 10
-        
-        # Bonus for length and position
-        score += len(sent.split()) * 0.2
-        if sent in sentences[:2] or sent in sentences[-2:]:  # Intro/conclusion
-            score += 5
-        
-        if score > best_score:
-            best_score = score
-            main_point = sent
-    
-    # Format as 3-line key point
-    words = main_point.split()
-    if len(words) > 25:
-        main_point = " ".join(words[:25]) + "..."
-    
-    return f"🎯 MAIN KEY POINT:\n• {main_point}\n• Course teaches practical AI agent building skills.\n• Most valuable skill for complex applications."
+def sentence_score(sentence: str, keyword_freq: Counter) -> float:
+    """Score a sentence based on keyword frequency"""
+    words = re.findall(r"\w+", sentence.lower())
+    if len(words) < 6:
+        return 0
+    score = sum(keyword_freq[w] for w in words if w not in STOPWORDS)
+    return score / max(len(words), 1)
 
-def summarize_text(text: str) -> Dict[str, str]:
-    """🎯 Perfect: Full transcription + 1 main key point."""
-    cleaned = clean_transcription(text)
-    main_key_point = extract_main_key_point(cleaned)
+def extract_summary_paragraph(text: str) -> str:
+    """Extract top 3-4 sentences into professional 2-3 line paragraph"""
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    
+    # Get keyword frequencies
+    words = re.findall(r"\w+", text.lower())
+    keywords = Counter(w for w in words if len(w) > 3 and w not in STOPWORDS)
+    
+    # Rank and select top sentences
+    ranked = sorted(
+        sentences,
+        key=lambda s: sentence_score(s, keywords),
+        reverse=True
+    )
+    
+    # Take top 3-4 sentences
+    top_sentences = []
+    for s in ranked[:4]:
+        s = s.strip()
+        if len(s.split()) > 8 and s not in top_sentences:
+            top_sentences.append(s)
+    
+    # Join into professional paragraph
+    summary = " ".join(top_sentences)
+    
+    # Clean up extra dots/ellipsis
+    summary = summary.rstrip('.')
+    summary = summary.rstrip('…')
+    summary = summary.rstrip('...')
+    summary = summary.strip()
+    
+    return summary
+
+def summarize_text(text: str) -> Dict:
+    """Generate summary and structured transcription"""
+    from services.transcriber import restore_punctuation, split_paragraphs
+    
+    cleaned = restore_punctuation(text)
+    paragraphs = split_paragraphs(cleaned)
+    
+    # Create professional 2-3 line summary paragraph
+    summary_paragraph = extract_summary_paragraph(cleaned)
     
     return {
-        "full_transcription": cleaned,      # ✅ ALL content preserved
-        "summary": main_key_point           # ✅ Single 3-line key point
+        "full_transcription": paragraphs,
+        "summary": {
+            "paragraph": summary_paragraph
+        }
     }

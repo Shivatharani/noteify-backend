@@ -2,6 +2,7 @@ import subprocess
 import os
 import sys
 
+
 def extract_audio_from_video(video_path: str) -> str:
     """Extract audio from video using system FFmpeg - NO PYTHON PACKAGE NEEDED"""
     audio_path = video_path.rsplit(".", 1)[0] + ".mp3"

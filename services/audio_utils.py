@@ -1,6 +1,7 @@
 from pydub import AudioSegment
 import os
 
+
 def convert_to_wav(input_path: str) -> str:
     audio = AudioSegment.from_file(input_path)
     audio = audio.set_channels(1)

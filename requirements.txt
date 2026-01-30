@@ -1,11 +1,6 @@
-fastapi
-uvicorn[standard]
-python-multipart
-vosk
-soundfile
-pydub
-ffmpeg-python
-transformers
-torch
-sentencepiece
-reportlab
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+pydub==0.25.1
+vosk==0.3.45
+reportlab==4.0.7

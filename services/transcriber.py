@@ -1,41 +1,38 @@
-from vosk import Model, KaldiRecognizer
-import wave
-import json
-import os
+import re
+from typing import List
 
-MODEL_PATH = "models/vosk-model-en-us-0.22"
 
-if not os.path.exists(MODEL_PATH):
-    raise RuntimeError(f"VOSK model not found at {MODEL_PATH}")
+def restore_punctuation(text: str) -> str:
+    text = text.strip()
+    text = re.sub(r"\s+", " ", text)
 
-model = Model(MODEL_PATH)
+    sentences = re.split(r"(?:\band\b|\bso\b|\bbut\b)", text)
 
-def transcribe_audio(wav_path: str) -> str:
-    wf = wave.open(wav_path, "rb")
-    
-    if wf.getnchannels() != 1:
-        raise ValueError("Audio must be mono WAV")
-    
-    rec = KaldiRecognizer(model, wf.getframerate())
-    text = ""
-    
-    while True:
-        data = wf.readframes(4000)
-        if len(data) == 0:
-            break
-        
-        # ✅ FIXED: Capture BOTH partial and final results
-        if rec.AcceptWaveform(data):
-            result = json.loads(rec.Result())
-            text += result.get("text", "") + " "
-        else:
-            # Partial results for better real-time feedback
-            partial = json.loads(rec.PartialResult())
-            print(f"Partial: {partial.get('partial', '')}")
-    
-    # Final result
-    final = json.loads(rec.FinalResult())
-    text += final.get("text", "")
-    
-    wf.close()
-    return text.strip()
+    formatted = []
+    for s in sentences:
+        s = s.strip()
+        if len(s) < 15:
+            continue
+        s = s.capitalize()
+        if not s.endswith((".", "!", "?")):
+            s += "."
+        formatted.append(s)
+
+    return " ".join(formatted)
+
+
+def split_paragraphs(text: str) -> List[str]:
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    paragraphs = []
+    buffer = []
+
+    for s in sentences:
+        buffer.append(s)
+        if len(" ".join(buffer).split()) > 70:
+            paragraphs.append(" ".join(buffer))
+            buffer = []
+
+    if buffer:
+        paragraphs.append(" ".join(buffer))
+
+    return paragraphs
